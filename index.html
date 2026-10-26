@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argument-Space Mapper</title>
+<style>
+  :root { --bg:#fafaf7; --panel:#fff; --ink:#1f2328; --mute:#667085; --line:#d9dce1; --accent:#1d4e89; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  header h1 { font-size:16px; margin:0 12px 0 0; }
+  button, label.btn { font:inherit; padding:5px 10px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; color:var(--ink); }
+  button:hover, label.btn:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary, label.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #wrap { display:grid; grid-template-columns:280px 1fr 340px; height:calc(100vh - 52px); }
+  aside { background:var(--panel); padding:12px; overflow:auto; border-right:1px solid var(--line); }
+  aside.right { border-right:none; border-left:1px solid var(--line); }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:16px 0 6px; }
+  h2:first-child { margin-top:0; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; margin:4px 0; }
+  .chk { display:block; margin:3px 0; }
+  main { position:relative; overflow:hidden; }
+  svg#g { width:100%; height:100%; display:block; background:var(--bg); }
+  .hint { color:var(--mute); font-size:12.5px; }
+  .tagrow { display:flex; justify-content:space-between; gap:8px; padding:2px 4px; border-bottom:1px solid #f0f1f3; font-size:13px; cursor:pointer; }
+  .tagrow:hover { background:#f3f6fa; }
+  .tagrow span.n { color:var(--mute); }
+  .tagrow.single span:first-child { color:#9a6700; }
+  .warn { background:#fff4e5; border:1px solid #f2c27b; border-radius:6px; padding:6px 8px; margin:4px 0; font-size:12.5px; }
+  .ok { color:#1a7f37; font-size:12.5px; }
+  .legend div { margin:3px 0; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin:0 4px 0 6px; vertical-align:middle; }
+  .legend i.sq { border-radius:2px; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:8px; background:#fcfcfd; }
+  .card .k { display:block; font-size:11px; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; margin-top:8px; }
+  .card .k:first-child { margin-top:0; }
+  .chip { display:inline-block; font-size:11.5px; padding:1px 7px; border-radius:10px; background:#eef2f7; margin:2px 3px 0 0; }
+  select, input[type=range] { width:100%; }
+  #err { color:#b42318; font-size:13px; margin:6px 0; white-space:pre-wrap; }
+  #empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; }
+  #empty .box { max-width:520px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:22px 24px; }
+  #empty h3 { margin:0 0 8px; font-size:17px; }
+  #empty ol { padding-left:20px; margin:8px 0 14px; }
+  #empty code { background:#f1f3f5; padding:0 4px; border-radius:3px; }
+  @media (max-width:1000px){ #wrap{grid-template-columns:1fr; height:auto;} main{height:70vh;} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Argument-Space Mapper</h1>
+  <label class="btn primary">Load your coded matrix (.csv / .xlsx)<input id="file" type="file" accept=".csv,.xlsx,.xls" hidden></label>
+  <button id="btnSample">Load example (phone bans)</button>
+  <button id="btnTemplate">Download blank template</button>
+  <span style="flex:1"></span>
+  <button id="btnSvg">Save SVG</button>
+  <button id="btnPng">Save PNG</button>
+</header>
+<div id="wrap">
+  <aside>
+    <h2>View</h2>
+    <div class="row">
+      <button id="vBi" class="on">Sources + codes</button>
+      <button id="vSrc">Source-to-source</button>
+    </div>
+    <div class="hint" id="viewHint"></div>
+
+    <h2>Lenses: which codes count?</h2>
+    <div id="lenses" class="hint">Load a file to see your coded columns.</div>
+
+    <h2>Color sources by</h2>
+    <select id="colorBy"></select>
+
+    <h2>Options</h2>
+    <label class="chk"><input type="checkbox" id="hideSingles" checked> Hide codes used by only one source</label>
+    <div id="thrWrap" style="display:none">
+      <label class="hint">Minimum shared codes to draw a link: <b id="thrVal">1</b></label>
+      <input type="range" id="thr" min="1" max="5" value="1">
+    </div>
+    <div class="row"><button id="btnRelayout">Re-run layout</button></div>
+
+    <h2>Legend</h2>
+    <div class="legend" id="legend"></div>
+    <div id="err"></div>
+  </aside>
+  <main>
+    <svg id="g" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="empty"><div class="box">
+      <h3>Build your map from your own coding</h3>
+      <ol>
+        <li>Start from the course template (button above). Fill in the Matrix tab: one row per source, full sentences for claim, grounds, key warrant and audience.</li>
+        <li>Define your codes in the Codebook tab, then pick up to 3 per dimension from the dropdowns in the Matrix.</li>
+        <li>Download as .xlsx (in Google Sheets: File &gt; Download &gt; Microsoft Excel) and load it here. Each coded dimension becomes a lens.</li>
+      </ol>
+      <div class="row">
+        <label class="btn primary">Load your coded matrix<input id="file2" type="file" accept=".csv,.xlsx,.xls" hidden></label>
+        <button id="btnSample2">See the example</button>
+      </div>
+      <p class="hint" style="margin-bottom:0">Your file is read in your own browser. Nothing is uploaded.</p>
+    </div></div>
+  </main>
+  <aside class="right">
+    <h2>Selected</h2>
+    <div id="detail" class="hint">Click a source to read its full profile, or a code to read every cell coded with it, side by side.</div>
+    <h2>Coding checks</h2>
+    <div id="checks" class="hint">—</div>
+    <h2>Code inventory</h2>
+    <div id="inv"></div>
+  </aside>
+</div>
+
+<script>
+// ==PURE-START==
+const MAX_CODES = 3;
+
+function parseCSV(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  text = String(text).replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(cur); cur = ''; rows.push(row); row = [];
+    } else cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim() !== ''));
+}
+
+const normCode = t => String(t).trim().replace(/\s+/g, ' ').toLowerCase();
+const normHead = h => String(h == null ? '' : h).trim().replace(/\s+/g, ' ');
+// "Claim code 1", "Key warrant codes", "warrant code2", "Stasis code" -> base name
+const LENS_RE = /^(.*?)\s*\bcodes?\s*#?\s*\d*\s*$/i;
+const FIXED = ['stance', 'stasis'];
+const SPLIT_RE = /[;|,\n]/;
+// does a code/block name refer to the same dimension as a column name?
+function sameDim(a, b) {
+  a = normCode(a).replace(/\bcodes?\b/g, '').trim(); b = normCode(b).replace(/\bcodes?\b/g, '').trim();
+  if (!a || !b) return false;
+  return a === b || a.endsWith(' ' + b) || b.endsWith(' ' + a);
+}
+
+// Reads a matrix (array of rows). Coded columns become lenses:
+//  - any column named "<X> code", "<X> codes" or "<X> code 1/2/3" (numbered columns are merged into one lens);
+//  - "Stance" and "Stasis" columns (single fixed categories) when they have no coded version.
+// Each lens is paired with the rich-text column <X> when present.
+// Rows whose ID starts with "EX" (examples) and rows with nothing but an ID are skipped.
+// codebook (optional): { "Claim codes": Set([...]), ... } read from a Codebook sheet.
+function readMatrix(matrix, codebook) {
+  if (!matrix.length || matrix.length < 2) throw new Error('The file needs a header row and at least one source row.');
+  const head = matrix[0].map(normHead);
+  const low = head.map(h => h.toLowerCase());
+  const idIdx = low.indexOf('id');
+  const srcIdx = low.findIndex(h => h === 'source' || h.startsWith('source'));
+  const byBase = new Map();
+  head.forEach((h, i) => {
+    const m = h && h.match(LENS_RE);
+    if (!m || !m[1]) return;
+    const base = m[1].trim(), k = base.toLowerCase();
+    if (!byBase.has(k)) byBase.set(k, { base, idxs: [] });
+    byBase.get(k).idxs.push(i);
+  });
+  const lensCols = new Set();
+  byBase.forEach(v => v.idxs.forEach(i => lensCols.add(i)));
+  const lenses = [];
+  const findRich = base => {
+    let i = low.findIndex((h, j) => !lensCols.has(j) && h === base.toLowerCase());
+    if (i < 0) i = low.findIndex((h, j) => h && !lensCols.has(j) && j !== idIdx && j !== srcIdx && !FIXED.includes(h) && sameDim(h, base));
+    return i;
+  };
+  byBase.forEach(({ base, idxs }) => {
+    const richIdx = findRich(base);
+    lenses.push({ key: 'L' + idxs[0], idxs, label: richIdx >= 0 ? head[richIdx] : base.charAt(0).toUpperCase() + base.slice(1), richIdx, richLabel: richIdx >= 0 ? head[richIdx] : null, first: idxs[0] });
+  });
+  FIXED.forEach(f => {
+    const i = low.indexOf(f);
+    if (i >= 0 && !byBase.has(f)) lenses.push({ key: 'L' + i, idxs: [i], label: head[i], richIdx: -1, richLabel: null, fixed: true, first: i });
+  });
+  lenses.sort((a, b) => a.first - b.first);
+  if (!lenses.filter(l => !l.fixed).length) throw new Error('No code columns found.\nThe matrix needs columns such as "Claim code 1" or "Key warrant codes". The easiest fix is to start from the course template.');
+  const used = new Set([idIdx, srcIdx]); lenses.forEach(l => l.idxs.forEach(i => used.add(i)));
+  const richCols = head.map((h, i) => ({ h, i })).filter(c => c.h && !used.has(c.i));
+  const get = (r, i) => (i >= 0 && r[i] != null) ? String(r[i]).trim() : '';
+  const sources = [];
+  matrix.slice(1).forEach((r, n) => {
+    const id = get(r, idIdx);
+    if (/^ex/i.test(id)) return;
+    const hasContent = r.some((v, i) => i !== idIdx && String(v == null ? '' : v).trim() !== '');
+    if (!hasContent) return;
+    const codes = {};
+    lenses.forEach(l => {
+      const list = [];
+      l.idxs.forEach(i => get(r, i).split(SPLIT_RE).map(normCode).filter(Boolean).forEach(c => { if (!list.includes(c)) list.push(c); }));
+      codes[l.key] = l.fixed ? list.slice(0, 1) : list;
+    });
+    const rich = {}; richCols.forEach(c => rich[c.h] = get(r, c.i));
+    sources.push({ id: id || ('S' + (n + 1)), source: get(r, srcIdx), rich, codes });
+  });
+  if (!sources.length) throw new Error('No sources found. Rows whose ID starts with EX are examples and are skipped; add your own rows (S1, S2, ...).');
+  // attach codebook sets to lenses
+  if (codebook) lenses.forEach(l => {
+    if (l.fixed) return;
+    const name = Object.keys(codebook).find(t => sameDim(t, l.label));
+    if (name) l.codebook = codebook[name];
+  });
+  return { lenses, richCols: richCols.map(c => c.h), sources, hasCodebook: !!codebook };
+}
+
+// Reads a Codebook sheet (array of rows): each block is a column headed "Code",
+// titled by the nearest non-empty cell above it (e.g. "Claim codes").
+function readCodebook(rows) {
+  const out = {};
+  const cell = (r, c) => (rows[r] && rows[r][c] != null) ? String(rows[r][c]).trim() : '';
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < (rows[r] || []).length; c++) {
+    if (cell(r, c).toLowerCase() !== 'code') continue;
+    let title = '';
+    for (let k = r - 1; k >= 0 && !title; k--) title = cell(k, c);
+    if (!title) continue;
+    const set = new Set();
+    for (let k = r + 1; k < rows.length; k++) { const v = normCode(cell(k, c)); if (v) set.add(v); }
+    out[title] = set;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function codeInventory(sources, lenses) {
+  const inv = {};
+  lenses.forEach(l => inv[l.key] = new Map());
+  sources.forEach(s => lenses.forEach(l => s.codes[l.key].forEach(c => inv[l.key].set(c, (inv[l.key].get(c) || 0) + 1))));
+  return inv;
+}
+
+function editDist(a, b) {
+  const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+const STOP = new Set(['of','the','a','an','and','or','to','for','in','on','as','by','is','over']);
+const stem = w => w.replace(/(ings|ing|ed|es|s)$/, '');
+const words = s => s.split(/[\s\-\/]+/).filter(w => w && !STOP.has(w)).map(stem);
+function similarCodes(a, b) {
+  if (a === b) return false;
+  if (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a))) return true;
+  if (Math.min(a.length, b.length) >= 5 && editDist(a, b) <= 2) return true;
+  const A = new Set(words(a)), B = new Set(words(b));
+  if (!A.size || !B.size) return false;
+  let inter = 0; A.forEach(x => { if (B.has(x)) inter++; });
+  return inter >= 1 && inter / Math.min(A.size, B.size) >= 1 && (A.size + B.size) > 2;
+}
+function codingChecks(data) {
+  const { lenses, sources } = data;
+  const inv = codeInventory(sources, lenses);
+  const tooMany = [], empty = [], dups = [], singles = [], notInCodebook = [], unusedCodebook = [];
+  sources.forEach(s => lenses.forEach(l => {
+    if (!l.fixed && s.codes[l.key].length > MAX_CODES) tooMany.push({ id: s.id, lens: l.label, n: s.codes[l.key].length });
+    if (!s.codes[l.key].length) empty.push({ id: s.id, lens: l.label });
+    if (l.codebook) s.codes[l.key].forEach(c => { if (!l.codebook.has(c)) notInCodebook.push({ id: s.id, lens: l.label, code: c }); });
+  }));
+  lenses.forEach(l => {
+    const cs = [...inv[l.key].keys()];
+    if (!l.fixed && !/^(stance|stasis)$/i.test(l.label)) {
+      for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) if (similarCodes(cs[i], cs[j])) dups.push({ lens: l.label, a: cs[i], b: cs[j] });
+      inv[l.key].forEach((n, c) => { if (n === 1) singles.push({ lens: l.label, code: c }); });
+    }
+    if (l.codebook) l.codebook.forEach(c => { if (!inv[l.key].has(c)) unusedCodebook.push({ lens: l.label, code: c }); });
+  });
+  return { inv, tooMany, empty, dups, singles, notInCodebook, unusedCodebook };
+}
+
+function sourceEdges(sources, keys, minW) {
+  const edges = [];
+  for (let i = 0; i < sources.length; i++) for (let j = i + 1; j < sources.length; j++) {
+    const shared = [];
+    keys.forEach(k => sources[i].codes[k].forEach(c => { if (sources[j].codes[k].includes(c)) shared.push(c); }));
+    if (shared.length >= minW) edges.push({ a: i, b: j, w: shared.length, shared });
+  }
+  return edges;
+}
+
+// Weighted label propagation; deterministic order.
+function clusters(n, edges) {
+  const adj = Array.from({ length: n }, () => []);
+  edges.forEach(e => { adj[e.a].push([e.b, e.w]); adj[e.b].push([e.a, e.w]); });
+  const label = Array.from({ length: n }, (_, i) => i);
+  for (let it = 0; it < 40; it++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      if (!adj[i].length) continue;
+      const score = new Map();
+      adj[i].forEach(([k, w]) => score.set(label[k], (score.get(label[k]) || 0) + w));
+      let best = label[i], bs = (score.get(label[i]) || 0);
+      [...score.entries()].sort((x, y) => x[0] - y[0]).forEach(([l, s]) => { if (s > bs) { bs = s; best = l; } });
+      if (best !== label[i]) { label[i] = best; changed = true; }
+    }
+    if (!changed) break;
+  }
+  const remap = new Map();
+  return label.map(l => { if (!remap.has(l)) remap.set(l, remap.size); return remap.get(l); });
+}
+// ==PURE-END==
+
+const SAMPLE_CSV = `ID,Source,Claim,Basis,Basis codes,Key assumption,Key assumption codes,Stasis,Stasis code,Audience,Audience codes,Stance
+S1,"Op-ed by a psychologist-advocate (notional)","Schools should ban phones bell to bell, because smartphones are driving the rise in teen anxiety.","Cites national trend lines showing teen anxiety rising alongside smartphone adoption; leans on the author's clinical authority. Correlational, not causal.",correlational trends; expert authority,"Kids cannot resist products engineered to hook them, and no single family can opt out alone, so adults must remove the choice for everyone. ""No 14-year-old can out-willpower a billion-dollar engagement team.""",child safety first; collective action problem,"Argues mainly about cause (phones cause harm) and treats the remedy as obvious once cause is granted.",cause,"Worried parents and mental-health professionals who already trust clinical expertise over school or industry voices.",anxious parents; health professionals,for
+S2,"District superintendent memo (notional)","The district will adopt a phone-free policy for instructional time.","Teacher reports of constant distraction plus one semester of early test-score gains at a pilot school.",practitioner report; early outcome data,"A district's first duty is instruction, and a clear, uniform rule is easier to run than case-by-case teacher judgment. ""Every exception is a negotiation teachers lose.""",instruction first; rules beat judgment,"Argues at the intervention stage: what the district should do, taking the problem as given.",intervention,"Board members, principals and teachers who will carry out the policy and want operational clarity.",school administrators; teachers,for
+S3,"Multi-school quantitative study (notional)","Bans are associated with modest achievement gains, mostly for lower-achieving students, with no clear mental-health effect.","Before/after comparison across dozens of schools; standard controls; effects are small and uneven.",quantitative study,"School-level averages tell a given school what will happen if it adopts a ban. The study never asks whether its schools resemble the reader's.",averages generalize,"Argues about quality: how good is the policy, judged by measured outcomes.",quality,"Policymakers and researchers who trust peer-reviewed effect sizes.",policy elites,mixed
+S4,"Qualitative implementation study (notional)","Bans often fail in practice; phones reappear within weeks.","Interviews and classroom observation in six schools over a year.",qualitative fieldwork,"What a policy achieves depends on enforcement capacity and school culture, not on the rule's wording. ""The policy was the same; the schools were not.""",implementation decides outcomes; context decides,"Argues about cause, but a different cause than S1: why bans do or don't work.",cause,"Administrators and education researchers who value on-the-ground detail.",school administrators; policy elites,mixed
+S5,"Teachers' union statement (notional)","The union supports limits but opposes making teachers the enforcers.","Member survey on workload, confiscation conflicts and safety incidents.",stakeholder survey,"Teacher time and teacher safety are real costs of any policy and belong in the policy decision, not left for the classroom to absorb.",implementation decides outcomes; hidden costs to staff,"Argues about intervention: not whether to limit phones, but who enforces.",intervention,"Union members and legislators writing the rules.",teachers; legislators,mixed
+S6,"Parent op-ed (notional)","Schools must not ban phones in the building.","Personal account of a lockdown drill and the fear of not reaching a child; no data.",personal testimony,"Being reachable by your child is a parental right that outranks classroom management; a school that cuts that line is overriding parents. ""I won't be the parent who couldn't reach my kid during a lockdown.""",child safety first; parental authority; distrust of institutions,"Argues about quality: the harm of losing contact outweighs the benefit of focus.",quality,"Parents, especially safety-concerned ones who distrust school assurances.",anxious parents,against
+S7,"Student-rights / digital-literacy brief (notional)","Schools should teach responsible phone use instead of banning phones.","Analogy to the world outside school, where students will have phones everywhere; a few program descriptions.",real-world analogy,"School exists to prepare students for the world as it is, and protection that delays practice only postpones the problem.",preparation over protection; student autonomy,"Argues about intervention: a different remedy for an agreed problem.",intervention,"Educators and civil-liberties-minded readers who value student autonomy.",educators; rights-minded,against
+S8,"Disability-advocacy letter (notional)","Any ban needs built-in exceptions.","Testimony from families whose children use phones as glucose monitors, translators and communication aids; cites disability law.",lived-experience testimony; legal requirement,"A policy that works for the average student can still wrongly burden some students, and the law requires accommodating them.",one size harms some; context decides,"Argues about quality: who bears the costs of a uniform rule.",quality,"Legislators and district counsel who must keep policy legally defensible.",legislators; legal gatekeepers,mixed
+S9,"State legislator press release (notional)","The state should enact a statewide bell-to-bell ban.","Polling showing broad parent support, plus a cited study of focus gains.",public opinion; quantitative study,"Government must act when children are at risk, and one uniform state rule is fairer than a patchwork of district policies.",child safety first; uniform rules are fair; collective action problem,"Argues about intervention, borrowing S1's cause claim without arguing it.",intervention,"Voters and parents; written for press coverage.",voters; anxious parents,for
+S10,"School-board association position (notional)","The state should not mandate a ban; districts should decide.","Descriptions of how districts differ in size, staffing and student needs.",practitioner report,"The people closest to a problem decide best, and a state mandate overrides local knowledge.",context decides; local knowledge,"Argues about intervention: who should decide, not what the decision should be.",intervention,"Local board members and the legislators drafting the mandate.",local boards; legislators,against
+`;
+
+const PALETTE = ['#2a7ab0','#c4542d','#7a5195','#2f8f83','#b8860b','#8c564b','#d45087','#5f6b7a','#3f8f3f','#a05195'];
+const LENS_COLORS = ['#c4542d','#2f8f83','#7a5195','#b8860b','#1d4e89','#8c564b','#d45087','#3f8f3f'];
+const STANCE_COLORS = { 'for':'#2a7ab0', 'against':'#c4542d', 'mixed':'#8a8f98' };
+
+const state = { data: null, view: 'bi', lens: new Set(), nodes: [], links: [], sel: null, anim: 0 };
+const $ = id => document.getElementById(id);
+const svg = $('g'), NS = 'http://www.w3.org/2000/svg';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+// ---------- loading ----------
+function loadMatrix(matrix, codebook) {
+  try {
+    const data = readMatrix(matrix, codebook);
+    state.data = data; state.sel = null; state.nodes = [];
+    // default lenses: all coded columns except stance/stasis
+    state.lens = new Set(data.lenses.filter(l => !l.fixed && !/^(stance|stasis)$/i.test(l.label)).map(l => l.key));
+    if (!state.lens.size) state.lens = new Set(data.lenses.map(l => l.key));
+    $('err').textContent = ''; $('empty').style.display = 'none';
+    buildControls(); rebuild();
+  } catch (e) { $('err').textContent = e.message; $('empty').style.display = state.data ? 'none' : 'flex'; alertInline(e.message); }
+}
+function alertInline(msg) { $('checks').innerHTML = `<div class="warn">${esc(msg)}</div>`; }
+const loadCSVText = t => loadMatrix(parseCSV(t));
+async function handleFile(ev) {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    if (/\.xlsx?$/i.test(f.name)) {
+      if (!window.XLSX) await new Promise((res, rej) => {
+        const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        s.onload = res; s.onerror = () => rej(new Error('Could not load the Excel reader. Save your sheet as CSV and load that instead.'));
+        document.head.appendChild(s);
+      });
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const rowsOf = name => XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: '' }).map(r => r.map(x => x == null ? '' : String(x)));
+      // the matrix: a sheet named "Matrix", else the first sheet whose header row has an ID column
+      let mName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'matrix');
+      if (!mName) mName = wb.SheetNames.find(n => { const r = rowsOf(n)[0] || []; return r.some(h => String(h).trim().toLowerCase() === 'id'); }) || wb.SheetNames[0];
+      const cbName = wb.SheetNames.find(n => /codebook/i.test(n));
+      loadMatrix(rowsOf(mName), cbName ? readCodebook(rowsOf(cbName)) : null);
+    } else loadCSVText(await f.text());
+  } catch (e) { $('err').textContent = e.message; }
+  ev.target.value = '';
+}
+$('file').onchange = handleFile; $('file2').onchange = handleFile;
+$('btnSample').onclick = $('btnSample2').onclick = () => loadCSVText(SAMPLE_CSV);
+$('btnTemplate').onclick = () => { const a = document.createElement('a'); a.href = 'argument_space_matrix_template.xlsx'; a.download = 'argument_space_matrix_template.xlsx'; document.body.appendChild(a); a.click(); a.remove(); };
+function download(name, data, type) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- controls ----------
+function lensColor(key) { const i = state.data.lenses.findIndex(l => l.key === key); return LENS_COLORS[i % LENS_COLORS.length]; }
+function buildControls() {
+  const d = state.data, box = $('lenses'); box.innerHTML = ''; box.className = '';
+  d.lenses.forEach(l => {
+    const lab = document.createElement('label'); lab.className = 'chk';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = state.lens.has(l.key);
+    cb.onchange = () => { cb.checked ? state.lens.add(l.key) : state.lens.delete(l.key); rebuild(); };
+    const sw = document.createElement('i'); sw.style.cssText = `display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 5px;background:${lensColor(l.key)}`;
+    lab.append(cb, sw, l.label); box.appendChild(lab);
+  });
+  const hint = document.createElement('div'); hint.className = 'hint'; hint.style.marginTop = '4px';
+  hint.textContent = 'Switch lenses and watch the same sources regroup. Your memo should say what each lens revealed.';
+  box.appendChild(hint);
+  const sel = $('colorBy'); sel.innerHTML = '';
+  const stance = d.lenses.find(l => l.label.toLowerCase() === 'stance');
+  const opts = [];
+  if (stance) opts.push([stance.key, 'Stance']);
+  d.lenses.filter(l => l !== stance).forEach(l => opts.push([l.key, l.label + ' (first code)']));
+  opts.push(['cluster', 'Detected cluster']);
+  opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+}
+$('vBi').onclick = () => setView('bi'); $('vSrc').onclick = () => setView('src');
+function setView(v) { state.view = v; $('vBi').classList.toggle('on', v === 'bi'); $('vSrc').classList.toggle('on', v === 'src'); rebuild(); }
+$('colorBy').onchange = () => draw();
+$('hideSingles').onchange = () => rebuild();
+$('thr').oninput = () => { $('thrVal').textContent = $('thr').value; rebuild(); };
+$('btnRelayout').onclick = () => { const W = svg.clientWidth, H = svg.clientHeight; state.nodes.forEach(n => { n.x = W/2 + (Math.random() - .5) * W * .6; n.y = H/2 + (Math.random() - .5) * H * .6; }); startSim(); };
+
+// ---------- graph ----------
+const activeKeys = () => state.data.lenses.map(l => l.key).filter(k => state.lens.has(k));
+function rebuild() {
+  const d = state.data; if (!d) return;
+  const keys = activeKeys(), S = d.sources;
+  $('thrWrap').style.display = state.view === 'src' ? '' : 'none';
+  $('viewHint').textContent = state.view === 'bi'
+    ? 'Squares are codes, circles are sources. A code linked to differently colored sources is a pattern the for/against split hides.'
+    : 'Sources are linked by how many codes they share under the chosen lenses. Thicker line = more shared codes.';
+  const minW = state.view === 'src' ? +$('thr').value : 1;
+  const cl = clusters(S.length, sourceEdges(S, keys, minW));
+  S.forEach((s, i) => s.cluster = cl[i]);
+
+  const checks = codingChecks(d);
+  const W = svg.clientWidth || 900, H = svg.clientHeight || 600;
+  const old = new Map(state.nodes.map(n => [n.key, n]));
+  const nodes = [], links = [], byKey = new Map();
+  const mk = (key, o) => { const p = old.get(key); const n = Object.assign({ key, x: p ? p.x : W/2 + (Math.random() - .5) * W * .5, y: p ? p.y : H/2 + (Math.random() - .5) * H * .5, vx: 0, vy: 0 }, o); nodes.push(n); byKey.set(key, n); return n; };
+  S.forEach((s, i) => mk('s' + i, { type: 'src', idx: i, label: s.id, r: 15 }));
+  if (state.view === 'bi') {
+    const hide = $('hideSingles').checked;
+    keys.forEach(k => checks.inv[k].forEach((cnt, c) => {
+      if (hide && cnt < 2) return;
+      mk(k + '|' + c, { type: 'code', lens: k, code: c, label: c, count: cnt, r: 5 + cnt * 1.8, color: lensColor(k) });
+    }));
+    S.forEach((s, i) => keys.forEach(k => s.codes[k].forEach(c => { if (byKey.has(k + '|' + c)) links.push({ a: 's' + i, b: k + '|' + c, w: 1 }); })));
+  } else {
+    sourceEdges(S, keys, minW).forEach(e => links.push({ a: 's' + e.a, b: 's' + e.b, w: e.w, shared: e.shared }));
+  }
+  links.forEach(l => { l.A = byKey.get(l.a); l.B = byKey.get(l.b); });
+  state.nodes = nodes; state.links = links;
+  if (state.sel && !byKey.has(state.sel.key)) state.sel = null;
+  renderChecks(checks); renderInventory(checks.inv);
+  startSim();
+}
+
+function startSim() {
+  cancelAnimationFrame(state.anim);
+  let alpha = 1, ticks = 0;
+  const W = svg.clientWidth || 900, H = svg.clientHeight || 600;
+  const L = state.view === 'bi' ? 75 : 120, rep = state.view === 'bi' ? 2200 : 4200;
+  const step = () => {
+    const N = state.nodes;
+    for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
+      let dx = N[j].x - N[i].x, dy = N[j].y - N[i].y; const d2 = dx*dx + dy*dy + 0.01, d = Math.sqrt(d2);
+      const f = rep / d2 * alpha; dx /= d; dy /= d;
+      N[i].vx -= dx*f; N[i].vy -= dy*f; N[j].vx += dx*f; N[j].vy += dy*f;
+    }
+    state.links.forEach(l => {
+      let dx = l.B.x - l.A.x, dy = l.B.y - l.A.y; const d = Math.sqrt(dx*dx + dy*dy) + 0.01;
+      const f = (d - L) * 0.02 * Math.min(l.w, 3) * alpha; dx /= d; dy /= d;
+      l.A.vx += dx*f; l.A.vy += dy*f; l.B.vx -= dx*f; l.B.vy -= dy*f;
+    });
+    N.forEach(n => {
+      n.vx += (W/2 - n.x) * 0.004 * alpha; n.vy += (H/2 - n.y) * 0.004 * alpha;
+      if (!n.fixed) { n.x += n.vx; n.y += n.vy; }
+      n.vx *= 0.6; n.vy *= 0.6;
+      n.x = Math.max(40, Math.min(W - 40, n.x)); n.y = Math.max(30, Math.min(H - 30, n.y));
+    });
+    alpha *= 0.985; ticks++; draw();
+    if (alpha > 0.02 && ticks < 500) state.anim = requestAnimationFrame(step);
+  };
+  step();
+}
+
+// ---------- drawing ----------
+function el(name, attrs, parent) { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function colorValues(by) { return [...new Set(state.data.sources.map(s => s.codes[by][0] || '(none)'))].sort(); }
+function sourceColor(s) {
+  const by = $('colorBy').value;
+  if (by === 'cluster') return PALETTE[s.cluster % PALETTE.length];
+  const v = s.codes[by][0] || '(none)';
+  if (STANCE_COLORS[v] && state.data.lenses.find(l => l.key === by).label.toLowerCase() === 'stance') return STANCE_COLORS[v];
+  return PALETTE[colorValues(by).indexOf(v) % PALETTE.length];
+}
+function highlighted() {
+  const sel = state.sel; if (!sel) return null;
+  const set = new Set([sel.key]);
+  state.links.forEach(l => { if (l.a === sel.key) set.add(l.b); if (l.b === sel.key) set.add(l.a); });
+  return set;
+}
+function draw() {
+  svg.innerHTML = ''; if (!state.data) return;
+  const hl = highlighted(), g = el('g', {}, svg), S = state.data.sources;
+  state.links.forEach(l => {
+    const dim = hl && !(hl.has(l.a) && hl.has(l.b));
+    const ln = el('line', { x1: l.A.x, y1: l.A.y, x2: l.B.x, y2: l.B.y, stroke: '#9aa3ad', 'stroke-width': state.view === 'src' ? 1 + l.w * 1.6 : 1.2, opacity: dim ? 0.07 : 0.55 }, g);
+    if (l.shared) el('title', {}, ln).textContent = 'Shared: ' + l.shared.join('; ');
+  });
+  state.nodes.forEach(n => {
+    const dim = hl && !hl.has(n.key);
+    const grp = el('g', { transform: `translate(${n.x},${n.y})`, opacity: dim ? 0.15 : 1, style: 'cursor:pointer' }, g);
+    if (n.type === 'src') {
+      el('circle', { r: n.r, fill: sourceColor(S[n.idx]), stroke: '#fff', 'stroke-width': 2 }, grp);
+      el('text', { 'text-anchor': 'middle', dy: '0.35em', fill: '#fff', 'font-size': 11, 'font-weight': 600, 'pointer-events': 'none' }, grp).textContent = n.label;
+      el('title', {}, grp).textContent = S[n.idx].id + ': ' + S[n.idx].source;
+    } else {
+      el('rect', { x: -n.r, y: -n.r, width: n.r * 2, height: n.r * 2, rx: 2, fill: n.color, opacity: 0.9 }, grp);
+      el('text', { y: n.r + 12, 'text-anchor': 'middle', 'font-size': 11, fill: '#1f2328', 'pointer-events': 'none', style: 'paint-order:stroke;stroke:#fafaf7;stroke-width:3px' }, grp).textContent = n.label;
+    }
+    grp.addEventListener('pointerdown', ev => startDrag(ev, n));
+  });
+  renderLegend(); renderDetail();
+}
+function startDrag(ev, n) {
+  ev.preventDefault(); ev.stopPropagation();
+  const r = svg.getBoundingClientRect(), x0 = ev.clientX, y0 = ev.clientY; let moved = false; n.fixed = true;
+  const move = e => { if (Math.abs(e.clientX - x0) + Math.abs(e.clientY - y0) > 3) moved = true; if (!moved) return; n.x = e.clientX - r.left; n.y = e.clientY - r.top; n.vx = n.vy = 0; draw(); };
+  const up = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); n.fixed = false;
+    if (!moved) select(state.sel && state.sel.key === n.key ? null : n.key);
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+function select(key) {
+  state.sel = key ? (state.nodes.find(n => n.key === key) || null) : null;
+  if (key && !state.sel && key.includes('|')) { const [lens, code] = key.split('|'); state.sel = { key, type: 'code', lens, code, virtual: true }; }
+  draw();
+}
+svg.addEventListener('pointerdown', ev => { if (ev.target === svg) select(null); });
+
+// ---------- panels ----------
+function renderLegend() {
+  const by = $('colorBy').value; let h = '';
+  if (by === 'cluster') {
+    const ids = [...new Set(state.data.sources.map(s => s.cluster))].sort((a, b) => a - b);
+    h += '<div>Sources:' + ids.map(i => `<i style="background:${PALETTE[i % PALETTE.length]}"></i>cluster ${i + 1}`).join('') + '</div>';
+    h += '<div class="hint">Clusters are groups of sources that share codes under the current lenses. Naming them is your job.</div>';
+  } else {
+    const isStance = state.data.lenses.find(l => l.key === by).label.toLowerCase() === 'stance';
+    const vals = colorValues(by);
+    h += '<div>Sources:' + vals.map(v => `<i style="background:${isStance && STANCE_COLORS[v] ? STANCE_COLORS[v] : PALETTE[vals.indexOf(v) % PALETTE.length]}"></i>${esc(v)}`).join('') + '</div>';
+  }
+  if (state.view === 'bi') h += '<div>Codes:' + state.data.lenses.filter(l => state.lens.has(l.key)).map(l => `<i class="sq" style="background:${lensColor(l.key)}"></i>${esc(l.label)}`).join('') + '</div>';
+  $('legend').innerHTML = h;
+}
+function lensOf(key) { return state.data.lenses.find(l => l.key === key); }
+function renderDetail() {
+  const d = $('detail'), sel = state.sel, S = state.data.sources;
+  if (!sel) { d.className = 'hint'; d.textContent = 'Click a source to read its full profile, or a code to read every cell coded with it, side by side.'; return; }
+  d.className = '';
+  if (sel.type === 'src') {
+    const s = S[sel.idx];
+    const paired = new Map(state.data.lenses.filter(l => l.richLabel).map(l => [l.richLabel, l]));
+    let h = `<div class="card"><span class="k">${esc(s.id)}</span><b>${esc(s.source)}</b>`;
+    state.data.richCols.forEach(c => {
+      if (!s.rich[c]) return;
+      h += `<span class="k">${esc(c)}</span>${esc(s.rich[c])}`;
+      const l = paired.get(c);
+      if (l) h += '<div>' + s.codes[l.key].map(x => `<span class="chip">${esc(x)}</span>`).join('') + '</div>';
+    });
+    state.data.lenses.filter(l => !l.richLabel).forEach(l => { h += `<span class="k">${esc(l.label)}</span>` + s.codes[l.key].map(x => `<span class="chip">${esc(x)}</span>`).join(''); });
+    d.innerHTML = h + '</div>';
+  } else {
+    const l = lensOf(sel.lens), users = S.filter(s => s.codes[sel.lens].includes(sel.code));
+    const stance = state.data.lenses.find(x => x.label.toLowerCase() === 'stance');
+    let h = `<div class="hint">${esc(l.label)} code</div><div style="font-size:16px;font-weight:600;margin:2px 0 8px">“${esc(sel.code)}”</div>
+      <div class="hint" style="margin-bottom:6px">Used by ${users.length} source(s). Read the cells side by side: do they really mean the same thing?</div>`;
+    users.forEach(s => {
+      h += `<div class="card"><span class="k">${esc(s.id)}${stance ? ' · ' + esc(s.codes[stance.key][0] || '') : ''}</span><b>${esc(s.source)}</b>`;
+      if (l.richLabel) h += `<div style="margin-top:4px">${esc(s.rich[l.richLabel] || '(empty cell)')}</div>`;
+      h += '</div>';
+    });
+    d.innerHTML = h;
+  }
+}
+function renderChecks(c) {
+  let h = '';
+  c.tooMany.forEach(x => h += `<div class="warn"><b>${esc(x.id)}</b> has ${x.n} ${esc(x.lens)} codes. The limit is ${MAX_CODES}: choose the ones that matter most.</div>`);
+  c.dups.forEach(x => h += `<div class="warn"><b>Possible overlap</b> in ${esc(x.lens)}: “${esc(x.a)}” and “${esc(x.b)}”. If they mean the same thing, use one name. If they differ, make sure your codebook says how.</div>`);
+  if (c.empty.length) h += `<div class="warn"><b>Uncoded cells:</b> ${c.empty.map(x => esc(x.id) + ' (' + esc(x.lens) + ')').join(', ')}</div>`;
+  if (c.notInCodebook.length) h += `<div class="warn"><b>Not in your Codebook:</b> ${c.notInCodebook.map(x => `“${esc(x.code)}” (${esc(x.id)}, ${esc(x.lens)})`).join('; ')}. Define each code in the Codebook, or fix its spelling.</div>`;
+  if (c.singles.length) h += `<div class="hint" style="margin:6px 0">${c.singles.length} code(s) are used only once (shown in amber below). A one-off code links nothing; it may be fine, or it may be a near-synonym of another code.</div>`;
+  if (c.unusedCodebook.length) h += `<div class="hint" style="margin:6px 0">Defined in your Codebook but not used: ${c.unusedCodebook.map(x => esc(x.code)).join(', ')}.</div>`;
+  if (state.data && !state.data.hasCodebook) h += `<div class="hint" style="margin:6px 0">No Codebook tab found, so codes were not checked against definitions. Upload the .xlsx file, not a CSV, to get that check.</div>`;
+  if (!c.tooMany.length && !c.dups.length && !c.empty.length && !c.notInCodebook.length) h = '<div class="ok">No problems found.</div>' + h;
+  $('checks').innerHTML = h; $('checks').className = '';
+}
+function renderInventory(inv) {
+  const box = $('inv'); box.innerHTML = '';
+  state.data.lenses.forEach(l => {
+    const h = document.createElement('h2'); h.textContent = l.label; box.appendChild(h);
+    [...inv[l.key].entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).forEach(([c, n]) => {
+      const row = document.createElement('div'); row.className = 'tagrow' + (n === 1 ? ' single' : '');
+      row.innerHTML = `<span>${esc(c)}</span><span class="n">${n}</span>`;
+      row.onclick = () => select(l.key + '|' + c);
+      box.appendChild(row);
+    });
+  });
+}
+
+// ---------- export ----------
+function svgString() {
+  const w = svg.clientWidth, h = svg.clientHeight, clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns', NS); clone.setAttribute('width', w); clone.setAttribute('height', h); clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  clone.querySelectorAll('text').forEach(t => t.setAttribute('font-family', 'Arial, Helvetica, sans-serif'));
+  const bg = document.createElementNS(NS, 'rect'); bg.setAttribute('width', w); bg.setAttribute('height', h); bg.setAttribute('fill', '#fafaf7');
+  clone.insertBefore(bg, clone.firstChild);
+  return new XMLSerializer().serializeToString(clone);
+}
+$('btnSvg').onclick = () => { if (state.data) download('argument_map.svg', svgString(), 'image/svg+xml'); };
+$('btnPng').onclick = () => {
+  if (!state.data) return;
+  const w = svg.clientWidth, h = svg.clientHeight, img = new Image();
+  img.onload = () => { const c = document.createElement('canvas'); c.width = w * 2; c.height = h * 2; const x = c.getContext('2d'); x.scale(2, 2); x.drawImage(img, 0, 0); c.toBlob(b => download('argument_map.png', b)); };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString());
+};
+window.addEventListener('resize', () => draw());
+</script>
+</body>
+</html>
