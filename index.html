@@ -367,7 +367,7 @@ async function handleFile(ev) {
   ev.target.value = '';
 }
 $('file').onchange = handleFile; $('file2').onchange = handleFile;
-$('btnSample').onclick = $('btnSample2').onclick = () => loadCSVText(SAMPLE_CSV);
+$('btnSample').onclick = $('btnSample2').onclick = () => { loadCSVText(SAMPLE_CSV); if (state.data) { state.data.isExample = true; renderChecks(codingChecks(state.data)); } };
 $('btnTemplate').onclick = () => { const a = document.createElement('a'); a.href = 'argument_space_matrix_template.xlsx'; a.download = 'argument_space_matrix_template.xlsx'; document.body.appendChild(a); a.click(); a.remove(); };
 function download(name, data, type) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
@@ -577,7 +577,7 @@ function renderChecks(c) {
   if (c.notInCodebook.length) h += `<div class="warn"><b>Not in your Codebook:</b> ${c.notInCodebook.map(x => `“${esc(x.code)}” (${esc(x.id)}, ${esc(x.lens)})`).join('; ')}. Define each code in the Codebook, or fix its spelling.</div>`;
   if (c.singles.length) h += `<div class="hint" style="margin:6px 0">${c.singles.length} code(s) are used only once (shown in amber below). A one-off code links nothing; it may be fine, or it may be a near-synonym of another code.</div>`;
   if (c.unusedCodebook.length) h += `<div class="hint" style="margin:6px 0">Defined in your Codebook but not used: ${c.unusedCodebook.map(x => esc(x.code)).join(', ')}.</div>`;
-  if (state.data && !state.data.hasCodebook) h += `<div class="hint" style="margin:6px 0">No Codebook tab found, so codes were not checked against definitions. Upload the .xlsx file, not a CSV, to get that check.</div>`;
+  if (state.data && !state.data.hasCodebook && !state.data.isExample) h += `<div class="hint" style="margin:6px 0">No Codebook tab found, so codes were not checked against definitions. Upload the .xlsx file, not a CSV, to get that check.</div>`;
   if (!c.tooMany.length && !c.dups.length && !c.empty.length && !c.notInCodebook.length) h = '<div class="ok">No problems found.</div>' + h;
   $('checks').innerHTML = h; $('checks').className = '';
 }
